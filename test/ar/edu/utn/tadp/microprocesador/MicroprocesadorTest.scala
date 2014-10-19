@@ -1,6 +1,6 @@
 package ar.edu.utn.tadp.microprocesador
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert._
 import org.junit.Test
 import ar.edu.utn.tadp.microprocesador._
 import org.junit.Before
@@ -9,6 +9,7 @@ import org.junit.runner.RunWith
 class MicroprocesadorTest {
 
   var micro: Microprocesador = _
+  var resultado: ResultadoDeEjecucion = _
 
   // ****************************************************************
   // ** SET-UP & TEAR-DOWN
@@ -21,19 +22,32 @@ class MicroprocesadorTest {
   // ** ASSERTS
   // ****************************************************************
 
-  def assertRegistros(expectedA: Short, expectedB: Short) = {
-    assertEquals(expectedA, micro.a)
-    assertEquals(expectedB, micro.b)
+  def assertRegistros(expectedA: Short, expectedB: Short) =
+    assertOnHalt(micro => {
+      assertEquals("Registro A", expectedA, micro.a)
+      assertEquals("Registro B", expectedB, micro.b)
+    })
+
+  def assertProgramCounter(expectedPc: Int) =
+    assertOnHalt(micro => assertEquals("Program counter", expectedPc, micro.pc))
+
+  def assertMemoriaDatos(posicion: Int, valor: Short) = assertOnHalt(micro =>
+    assertEquals(s"memoria datos at $posicion", valor, micro.memoriaDeDatos(posicion)))
+
+  def assertOnHalt(assertion: Microprocesador => Unit) = resultado match {
+    case Halt(micro) => assertion(micro)
+    case _ => fail
   }
 
-  def assertProgramCounter(expectedPc: Int) = assertEquals(expectedPc, micro.pc)
+  def ejecutarEnMicro(instrucciones: Instruccion*) =
+    resultado = ejecutar(micro, instrucciones: _*)
   // ****************************************************************
   // ** TESTS
   // ****************************************************************
 
   @Test
   def `lodv escribe en el acumulador A` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(255),
       HALT)
 
@@ -43,7 +57,7 @@ class MicroprocesadorTest {
 
   @Test
   def `swap` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(15),
       SWAP,
       HALT)
@@ -54,7 +68,7 @@ class MicroprocesadorTest {
 
   @Test
   def `programa que suma uno mas uno` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(1),
       ADD,
       LODV(1),
@@ -67,21 +81,21 @@ class MicroprocesadorTest {
 
   @Test
   def `programa que escribe la memoria` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(255),
       STR(333),
       HALT)
 
     assertRegistros(255, 0)
     assertProgramCounter(5)
-    assertEquals(255, micro.memoriaDeDatos(333))
+    assertMemoriaDatos(333, 255)
   }
 
   @Test
   def `programa que lee la memoria` = {
-    micro.memoriaDeDatos(333) = 145
+    micro = micro.copy(memoriaDeDatos = micro.memoriaDeDatos.updated(333.toShort, 145.toShort))
 
-    ejecutar(micro,
+    ejecutarEnMicro(
       LOD(333),
       HALT)
 
@@ -91,7 +105,7 @@ class MicroprocesadorTest {
 
   @Test
   def `If que ejecuta lo que esta dentro` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(3),
       IFNZ(
         SWAP,
@@ -106,7 +120,7 @@ class MicroprocesadorTest {
 
   @Test
   def `If que NO ejecuta lo que esta dentro` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(3),
       SWAP,
       IFNZ(
@@ -119,7 +133,7 @@ class MicroprocesadorTest {
 
   @Test
   def `HALT en medio de un programa` = {
-    ejecutar(micro,
+    ejecutarEnMicro(
       LODV(3),
       HALT,
       LODV(5))
