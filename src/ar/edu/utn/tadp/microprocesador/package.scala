@@ -34,35 +34,28 @@ package object microprocesador {
   // ** EJECUTAR
   // ****************************************************************
 
-  def ejecutar(micro: Microprocesador, programa: Instruccion*): ResultadoDeEjecucion =
-    programa.foldLeft(Ejecutando(micro): ResultadoDeEjecucion) {
-    (resultado, instruccion) => 
-//      case (Ejecutando(m), instruccion) =>
-        val resultadoSiguiente = resultado.map { _ pc_+= instruccion.bytes }
-
+def ejecutar(micro: Microprocesador, programa: Instruccion*): ResultadoDeEjecucion = 
+  programa.foldLeft(Ejecutando(micro): ResultadoDeEjecucion) { (resultado, instruccion) =>
+    
       instruccion match {
-        case HALT => Halt(resultado.micro)
 
-        case inst @ IFNZ(instruccionesInternas @ _*) => for {
-          micro <- resultadoSiguiente
-          microPostInternas <- 
-          ejecutar(micro, instruccionesInternas: _*)
-        } yield if (micro.a == 0) 
-          micro pc_+= inst.bytesCuerpo 
-          else microPostInternas pc_+= 1
-
-        case inst => for (micro <- resultadoSiguiente) yield inst match {
-          case NOP => micro
-          case ADD => micro.guardar(micro.a + micro.b)
-          case MUL => micro.guardar(micro.a * micro.b)
-          case SWAP => micro.copy(a = micro.b, b = micro.a)
-          case LODV(valor) => micro.copy(a = valor)
-          case LOD(direccion) => micro.copy(a = micro.memoriaDeDatos(direccion))
-          case STR(direccion) => micro.copy(memoriaDeDatos = micro.memoriaDeDatos.updated(direccion, micro.a))
-        }
+      case HALT => Halt(resultado.micro pc_+= HALT.bytes)
+      
+      case other => for (m <- resultado) yield other match {
+        case NOP => m
+        case ADD => m.guardar(m.a + m.b)
+        case MUL => m.guardar(m.a * m.b)
+        case SWAP => m.copy(a = m.b, b = m.a)
+        case LODV(valor) => m.copy(a = valor)
+        case LOD(direccion) => m.copy(a = m.memoriaDeDatos(direccion))
+        case STR(direccion) => m.copy(memoriaDeDatos = m.memoriaDeDatos.updated(direccion, m.a))
+       
+        case IFNZ(instrucciones @ _*) =>
+          if (m.a == 0) m pc_+= instrucciones.map(_.bytes).sum + 1
+          else (for (im <- ejecutar(m, instrucciones: _*)) yield im pc_+= 1).micro
       }
-//      case (otro, _) => otro
 
+      }  
     }
 
   // ****************************************************************
