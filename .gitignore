@@ -1,3 +1,6 @@
 .metadata
 RemoteSystemsTempFiles
 */bin
+/bin
+.cache
+.worksheet

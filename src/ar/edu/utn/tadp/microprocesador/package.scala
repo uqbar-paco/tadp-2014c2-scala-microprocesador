@@ -5,48 +5,65 @@ import scala.language.implicitConversions
 package object microprocesador {
   implicit def SeqToList[T](s: Seq[T]) = s.toList
 
-  trait ResultadoDeEjecucion
-  case class Ejecutando(micro: Microprocesador) extends ResultadoDeEjecucion
-  case class Halt(micro: Microprocesador) extends ResultadoDeEjecucion
-  case class Error(micro: Microprocesador, descripcion: String) extends ResultadoDeEjecucion
+  trait ResultadoDeEjecucion{
+    def micro: Microprocesador
+    def map(f:(Microprocesador=>Microprocesador)): ResultadoDeEjecucion
+    def filter(f:(Microprocesador=>Boolean)): ResultadoDeEjecucion
+    def flatMap(f:(Microprocesador=>ResultadoDeEjecucion)): ResultadoDeEjecucion
+  }
+  
+  case class Ejecutando(val micro: Microprocesador) extends ResultadoDeEjecucion{
+    def map(f:(Microprocesador=>Microprocesador))= Ejecutando(f(micro))
+    def filter(f:(Microprocesador=>Boolean))= if(f(micro)) this else Error(micro,"Fallo el filtrado")
+    def flatMap(f:(Microprocesador=>ResultadoDeEjecucion))= f(micro)
+  }
+  
+  case class Halt(val micro: Microprocesador) extends ResultadoDeEjecucion{
+    def map(f:(Microprocesador=>Microprocesador))= this
+    def filter(f:(Microprocesador=>Boolean))= this 
+    def flatMap(f:(Microprocesador=>ResultadoDeEjecucion))= this
+  }
+  
+  case class Error(val micro: Microprocesador, descripcion: String) extends ResultadoDeEjecucion{
+    def map(f:(Microprocesador=>Microprocesador))= this
+    def filter(f:(Microprocesador=>Boolean))= this 
+    def flatMap(f:(Microprocesador=>ResultadoDeEjecucion))= this
+  }
 
   // ****************************************************************
   // ** EJECUTAR
   // ****************************************************************
 
-  def ejecutar(micro: Microprocesador, programa: Instruccion*): ResultadoDeEjecucion = programa.toList match {
-    case Nil => Ejecutando(micro)
-    case HALT :: _ => Halt(micro)
-    case instruccionActual :: restantes =>
-      val resultado = instruccionActual match {
-        case IFNZ(instruccionesInternas @ _*) =>
-          if (micro.a != 0)
-            ejecutar(micro pc_+= instruccionActual.bytes,
-              instruccionesInternas: _*) match {
-                case Ejecutando(m) => Ejecutando(m pc_+= END.bytes)
-                case otro => otro
-              }
-          else Ejecutando(micro pc_+= instruccionActual.bytes +
-            instruccionesInternas.map(_.bytes).sum + END.bytes)
+  def ejecutar(micro: Microprocesador, programa: Instruccion*): ResultadoDeEjecucion =
+    programa.foldLeft(Ejecutando(micro): ResultadoDeEjecucion) {
+    (resultado, instruccion) => 
+//      case (Ejecutando(m), instruccion) =>
+        val resultadoSiguiente = resultado.map { _ pc_+= instruccion.bytes }
 
-        case otra =>
-          val siguienteMicro = otra match {
-            case NOP => micro
-            case ADD => micro.guardar(micro.a + micro.b)
-            case MUL => micro.guardar(micro.a * micro.b)
-            case SWAP => micro.copy(a = micro.b, b = micro.a)
-            case LODV(valor) => micro.copy(a = valor)
-            case LOD(direccion) => micro.copy(a = micro.memoriaDeDatos(direccion))
-            case STR(direccion) => micro.copy(memoriaDeDatos = micro.memoriaDeDatos.updated(direccion, micro.a))
-          }
-          Ejecutando(siguienteMicro.pc_+=(otra.bytes))
-      }
+      instruccion match {
+        case HALT => Halt(resultado.micro)
 
-      resultado match {
-        case Ejecutando(micro) => ejecutar(micro, restantes: _*)
-        case x => x
+        case inst @ IFNZ(instruccionesInternas @ _*) => for {
+          micro <- resultadoSiguiente
+          microPostInternas <- 
+          ejecutar(micro, instruccionesInternas: _*)
+        } yield if (micro.a == 0) 
+          micro pc_+= inst.bytesCuerpo 
+          else microPostInternas pc_+= 1
+
+        case inst => for (micro <- resultadoSiguiente) yield inst match {
+          case NOP => micro
+          case ADD => micro.guardar(micro.a + micro.b)
+          case MUL => micro.guardar(micro.a * micro.b)
+          case SWAP => micro.copy(a = micro.b, b = micro.a)
+          case LODV(valor) => micro.copy(a = valor)
+          case LOD(direccion) => micro.copy(a = micro.memoriaDeDatos(direccion))
+          case STR(direccion) => micro.copy(memoriaDeDatos = micro.memoriaDeDatos.updated(direccion, micro.a))
+        }
       }
-  }
+//      case (otro, _) => otro
+
+    }
 
   // ****************************************************************
   // ** SIMPLIFICAR
